@@ -2,7 +2,12 @@ package main
 
 import (
 	"archive/zip"
+	"bufio"
+	"bytes"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,15 +26,13 @@ const (
 
 // used to describe a file to be zipped
 type fileEntry struct {
-	rootPath   string
+	filename   string
 	parentPath string
-	path       string
-	isBareFile bool
 }
 
 // zipFileEntry represents data stored about a file to be zipped
 type zipFileEntry struct {
-	name             string
+	path             string
 	compressedSize   uint64
 	uncompressedSize uint64
 	date             string
@@ -37,12 +40,68 @@ type zipFileEntry struct {
 	timestamp        time.Time
 }
 
+// hasFileEntry check for duplicate absolute paths. Files could be put in more than
+// once since zip allows multiple dir/path args.
+func hasFileEntry(check fileEntry, feList *[]fileEntry) (found bool) {
+	for _, fe := range *feList {
+		if check.fullPath() == fe.fullPath() {
+			return true
+		}
+	}
+	return
+}
+
+func (fe *fileEntry) existsLocally() (exists bool) {
+	if _, err := os.Stat(fe.fullPath()); os.IsNotExist(err) {
+		return
+	}
+	exists = true
+
+	return
+}
+
+// fullPath get full path for an entry
+func (fe *fileEntry) writeToFile(data []byte) (err error) {
+	os.MkdirAll(fe.fullDir(), os.ModePerm)
+
+	file, err := os.Create(fe.fullPath())
+	if err != nil {
+		return
+	}
+	byteReader := bytes.NewReader(data)
+	reader := bufio.NewReader(byteReader)
+	_, err = io.Copy(file, reader)
+	if err != nil {
+		return
+	}
+
+	return
+}
+
+// fullPath get full path for an entry
+func (fe *fileEntry) fullDir() (fullPath string) {
+	fullPath = filepath.Dir(fe.fullPath())
+	return
+}
+
+// fullPath get full path for an entry
+func (fe *fileEntry) fullPath() (fullPath string) {
+	fullPath = filepath.Join(args.Dir, fe.parentPath, fe.filename)
+	return
+}
+
+// archivePath get path for archive for entry
+func (fe *fileEntry) archivePath() (archivePath string) {
+	archivePath = filepath.Join(fe.parentPath, fe.filename)
+	return
+}
+
 func hasZipFileEntry(path string, feList *[]zipFileEntry) (found bool, fe zipFileEntry) {
 	if len(*feList) == 0 {
 		return
 	}
 	for _, fe = range *feList {
-		if path == fe.name {
+		if path == fe.path {
 			found = true
 			return
 		}
@@ -91,7 +150,7 @@ func printEntries(name string) (err error) {
 			file.uncompressedSize,
 			file.date,
 			file.time,
-			file.name,
+			file.path,
 		)
 		totalCompressed += int64(file.compressedSize)
 		totalUnCompressed += int64(file.uncompressedSize)
@@ -115,7 +174,7 @@ func zipFileList(name string) (entries []zipFileEntry, err error) {
 
 	for _, file := range zf.File {
 		entry := zipFileEntry{}
-		entry.name = file.Name
+		entry.path = file.Name
 		entry.compressedSize = file.CompressedSize64
 		entry.uncompressedSize = file.UncompressedSize64
 		dateStr := file.Modified.Format("2006-01-02") // get formatted date
@@ -151,6 +210,13 @@ var args struct {
 
 func main() {
 	args.Quiet = false
-	arg.MustParse(&args)
+	p := arg.MustParse(&args)
+
+	if !args.Update && !args.Freshen {
+		args.Update = true
+	}
+	if args.Update && args.Freshen {
+		p.Fail("both -u (update) and -f (freshen) specified")
+	}
 
 }
