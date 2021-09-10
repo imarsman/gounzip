@@ -132,6 +132,76 @@ func colour(colour int, input ...string) (output string) {
 	return
 }
 
+// Walk a file or a directory and gatehr file entries and error messages
+func walkAllFilesInDir(path string, fileEntries *[]fileEntry, errorMsgs *[]string) (err error) {
+	var file *os.File
+	file, err = os.Open(path)
+	if err != nil {
+		*errorMsgs = append(*errorMsgs, err.Error())
+		return
+	}
+	defer file.Close()
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		*errorMsgs = append(*errorMsgs, err.Error())
+		return
+	}
+	defer file.Close()
+
+	rootPath, err := filepath.Abs(path)
+	rootPath = filepath.Dir(rootPath)
+
+	var curDir string
+	var basePath string
+
+	if !fileInfo.IsDir() {
+		fe := fileEntry{}
+		fe.rootPath = rootPath
+
+		abs, _ := filepath.Abs(path)
+		parentPath := filepath.Dir(abs)
+
+		fe.rootPath = filepath.Dir(rootPath)
+		fe.parentPath = parentPath
+
+		fe.filename = fileInfo.Name()
+		fe.isBareFile = true
+
+		if !hasFileEntry(fe, fileEntries) {
+			*fileEntries = append(*fileEntries, fe)
+		}
+		return
+	}
+
+	return filepath.Walk(path, func(path string, info os.FileInfo, e error) (err error) {
+		if err != nil {
+			*errorMsgs = append(*errorMsgs, e.Error())
+			return err
+		}
+
+		if info.Name() == filepath.Base(path) {
+			basePath, err = filepath.Abs(path)
+			basePath = filepath.Dir(basePath)
+		}
+		if info.IsDir() {
+			curDir = info.Name()
+			curDir = filepath.Join(basePath, curDir)
+		}
+		// check if it is a regular file (not dir)
+		if info.Mode().IsRegular() {
+			fe := fileEntry{}
+			fe.parentPath = curDir
+			// fe.rootPath = rootPath
+
+			fe.filename = filepath.Join(info.Name())
+			// start with base path since it is a directory
+			*fileEntries = append(*fileEntries, fe)
+		}
+		return
+	})
+}
+
 func unzip(path string) (err error) {
 	archive, err := zip.OpenReader(path)
 	if err != nil {
@@ -166,6 +236,21 @@ func unzip(path string) (err error) {
 
 		return
 	}
+
+	var fileEntries = []fileEntry{}
+	var errorMsgs = []string{}
+
+	// Populate list of files
+	for _, path := range args.SourceFiles {
+		// fmt.Println(args.SourceFiles)
+		walkAllFilesInDir(path, &fileEntries, &errorMsgs)
+	}
+	if len(fileEntries) == 0 {
+		fmt.Fprintln(os.Stderr, colour(brightRed, "no valid files found"))
+		os.Exit(1)
+	}
+
+	zipFileEntries, err := zipFileList(path)
 
 	for _, f := range archive.File {
 		filePath := filepath.Join(args.Dir, f.Name)
