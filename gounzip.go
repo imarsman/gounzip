@@ -132,6 +132,84 @@ func colour(colour int, input ...string) (output string) {
 	return
 }
 
+func unzip(path string) (err error) {
+	archive, err := zip.OpenReader(path)
+	if err != nil {
+		panic(err)
+	}
+	defer archive.Close()
+
+	var write = func(filePath string, f *zip.File) (err error) {
+		if err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
+			return
+		}
+
+		var dstFile *os.File
+		dstFile, err = os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		if err != nil {
+			return
+		}
+
+		defer dstFile.Close()
+
+		var fileInArchive io.ReadCloser
+
+		fileInArchive, err = f.Open()
+		if err != nil {
+			return
+		}
+		defer fileInArchive.Close()
+
+		if _, err = io.Copy(dstFile, fileInArchive); err != nil {
+			return
+		}
+
+		return
+	}
+
+	for _, f := range archive.File {
+		filePath := filepath.Join(args.Dir, f.Name)
+		fmt.Println("unzipping file ", filePath)
+
+		// if !strings.HasPrefix(filePath, filepath.Clean(dst)+string(os.PathSeparator)) {
+		// 	fmt.Println("invalid file path")
+		// 	return
+		// }
+		if f.FileInfo().IsDir() {
+			// fmt.Println("creating directory...")
+			// os.MkdirAll(filePath, os.ModePerm)
+			continue
+		}
+
+		if err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
+			return
+		}
+
+		err = write(filePath, f)
+		if err != nil {
+			return
+		}
+		// var dstFile *os.File
+		// dstFile, err = os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		// if err != nil {
+		// 	return
+		// }
+
+		// var fileInArchive io.ReadCloser
+
+		// fileInArchive, err = f.Open()
+		// if err != nil {
+		// 	return
+		// }
+
+		// if _, err = io.Copy(dstFile, fileInArchive); err != nil {
+		// 	return
+		// }
+	}
+
+	return
+}
+
 // printEntries of a zip file
 func printEntries(path string) (err error) {
 	zipFileEntries, err := zipFileList(path)
@@ -220,4 +298,18 @@ func main() {
 		p.Fail("both -u (update) and -f (freshen) specified")
 	}
 
+	// Handle printing list of files in archive
+	if args.List {
+		err := printEntries(args.Zipfile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, colour(brightRed, err.Error()))
+		}
+		os.Exit(0)
+	}
+
+	err := unzip(args.Zipfile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, colour(brightRed, err.Error()))
+
+	}
 }
