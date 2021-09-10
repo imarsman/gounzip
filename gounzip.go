@@ -51,6 +51,7 @@ func hasFileEntry(check fileEntry, feList *[]fileEntry) (found bool) {
 	return
 }
 
+// does file exist at destination path
 func (fe *fileEntry) existsLocally() (exists bool) {
 	if _, err := os.Stat(fe.fullPath()); os.IsNotExist(err) {
 		return
@@ -132,8 +133,8 @@ func colour(colour int, input ...string) (output string) {
 }
 
 // printEntries of a zip file
-func printEntries(name string) (err error) {
-	zipFileEntries, err := zipFileList(name)
+func printEntries(path string) (err error) {
+	zipFileEntries, err := zipFileList(path)
 	if err != nil {
 		return
 	}
@@ -162,8 +163,8 @@ func printEntries(name string) (err error) {
 }
 
 // zipFileList get list of files in zipfile
-func zipFileList(name string) (entries []zipFileEntry, err error) {
-	zf, err := zip.OpenReader(name)
+func zipFileList(path string) (entries []zipFileEntry, err error) {
+	zf, err := zip.OpenReader(path)
 	if err != nil {
 		return
 	}
